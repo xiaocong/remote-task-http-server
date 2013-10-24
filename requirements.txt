@@ -1,0 +1,9 @@
+PyYAML==3.10
+argparse==1.2.1
+bottle==0.11.6
+gevent==0.13.8
+greenlet==0.4.1
+gunicorn==18.0
+psutil==1.1.2
+sh==1.09
+wsgiref==0.1.2

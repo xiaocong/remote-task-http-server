@@ -1,0 +1,13 @@
+*.class
+bin
+libs
+build
+dist
+uiautomator.egg-info
+.classpath
+.project
+*.pyc
+*.egg
+.tox
+.coverage
+venv
