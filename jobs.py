@@ -51,9 +51,9 @@ def all_jobs():
         if os.path.isfile(json_file):
             with open(json_file) as f:
                 result['all'].append(json.load(f))
-    if jobs:
-        result['jobs'] = [job['job_info'] for job in jobs]
-    for key in result:  # sort 
+    result['jobs'] = [job['job_info'] for job in jobs]
+
+    for key in result:  # sort
         result[key] = sorted(result[key], key=lambda x: float(x['timestamp']), reverse=reverse)
 
     return result
@@ -79,16 +79,13 @@ def create_job():
     jobs_path, job_id = app.config.get('jobs.path'), next_job_id()
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
     workspace = os.path.join(job_path, 'workspace')
-    env['WORKSPACE'] = workspace
-    env['JOB_ID'] = job_id
-    try:
-        os.makedirs(workspace)
-    except:
-        pass
-    local_repo = os.path.join(job_path, 'repo')
-    job_out = os.path.join(job_path, 'output')
-    job_script = os.path.join(job_path, 'run.sh')
-    job_info = os.path.join(job_path, 'job.json')
+    os.makedirs(workspace)  # make the working directory for the job
+    env.update({
+        'WORKSPACE': workspace,
+        'JOB_ID': job_id
+    })
+    filenames = ['repo', 'output', 'run.sh', 'job.json']
+    local_repo, job_out, job_script, job_info = [os.path.join(job_path, f) for f in filenames]
     with open(job_script, "w") as script_f:
         script_f.write(template(
             'run_script',
@@ -173,7 +170,7 @@ def job_info(job_id):
 
 @app.get("/<job_id>/stream")
 def output(job_id):
-    last_lines = int(request.params.get('last_lines', 40))
+    lines = int(request.params.get('lines', 40))
     jobs_path = app.config.get('jobs.path')
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
     job_out = os.path.join(job_path, 'output')
@@ -182,7 +179,7 @@ def output(job_id):
         raise StopIteration
     with open(job_info) as f:
         info = json.load(f)
-    for line in sh.tail('--lines=%d' % last_lines, '--pid=%d' % info['job_pid'], '-f', job_out, _iter=True):
+    for line in sh.tail('--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out, _iter=True):
         yield line
 
 
