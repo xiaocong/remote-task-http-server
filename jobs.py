@@ -122,13 +122,13 @@ def create_job():
                 return True
             else:
                 jobs.remove(job)
+                result['exit_code'] = job['proc'].exit_code
+                write_json(job_info, result)
                 return False
         while check():
             time.sleep(1)
     threading.Thread(target=proc_clear).start()
-
-    with open(job_info, 'w') as info_f:
-        info_f.write(json.dumps(result, sort_keys=True, indent=2))
+    write_json(job_info, result)
     return result
 
 
@@ -224,3 +224,7 @@ def next_job_id():
 
 def get_boolean(param):
     return param.lower() != 'false' and param != '0'
+
+def write_json(filename, obj):
+    with open(filename, 'w') as info_f:
+        info_f.write(json.dumps(obj, sort_keys=True, indent=2))
