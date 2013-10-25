@@ -45,7 +45,7 @@ def all_jobs():
     global jobs
     result = {'all': [], 'jobs': []}
     job_path = app.config.get('jobs.path')
-    reverse = get_boolean(request.params.get('reverse', 'False'))
+    reverse = get_boolean(request.params.get('reverse', 'false'))
     for dirname in os.listdir(job_path):
         json_file = os.path.join(job_path, dirname, 'job.json')
         if os.path.isfile(json_file):
@@ -65,7 +65,7 @@ def create_job():
     repo = request.json.get('repo')
     if repo is None:
         abort(400, 'The "repo" is mandatory for creating a new job!')
-    exclusive = get_boolean(request.json.get('exclusive', 'True'))
+    exclusive = get_boolean(request.json.get('exclusive', True))
     env = request.json.get('env', {})
     env.setdefault('ANDROID_SERIAL', 'no_device')
 
@@ -198,6 +198,8 @@ def delete_file(job_id):
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
     if any(job_id == job['job_info']['job_id'] for job in jobs):
         abort(409, 'The specified job is running!')
+    elif not os.path.exists(job_path):
+        abort(400, 'No specified job!')
     shutil.rmtree(job_path, ignore_errors=True)
 
 
@@ -223,7 +225,8 @@ def next_job_id():
 
 
 def get_boolean(param):
-    return param.lower() != 'false' and param != '0'
+    return param if isinstance(param, bool) else param not in ['false', '0', 0, 'False']
+
 
 def write_json(filename, obj):
     with open(filename, 'w') as info_f:
