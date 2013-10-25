@@ -45,6 +45,7 @@ def all_jobs():
     global jobs
     result = {'all': [], 'jobs': []}
     job_path = app.config.get('jobs.path')
+    reverse = get_boolean(request.params.get('reverse', 'False'))
     for dirname in os.listdir(job_path):
         json_file = os.path.join(job_path, dirname, 'job.json')
         if os.path.isfile(json_file):
@@ -52,6 +53,9 @@ def all_jobs():
                 result['all'].append(json.load(f))
     if jobs:
         result['jobs'] = [job['job_info'] for job in jobs]
+    for key in result:  # sort 
+        result[key] = sorted(result[key], key=lambda x: float(x['timestamp']), reverse=reverse)
+
     return result
 
 
@@ -59,8 +63,9 @@ def all_jobs():
 @lock
 def create_job():
     repo = request.json.get('repo')
-    exclusive = request.json.get('exclusive', "True").lower()
-    exclusive = exclusive != 'false' and exclusive != '0'
+    if repo is None:
+        abort(400, 'The "repo" is mandatory for creating a new job!')
+    exclusive = get_boolean(request.json.get('exclusive', 'True'))
     env = request.json.get('env', {})
     env.setdefault('ANDROID_SERIAL', 'no_device')
 
@@ -218,3 +223,7 @@ def kill_process_and_children(pid):
 
 def next_job_id():
     return str(uuid.uuid1())
+
+
+def get_boolean(param):
+    return param.lower() != 'false' and param != '0'
