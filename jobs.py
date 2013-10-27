@@ -150,6 +150,7 @@ def get_init_script(job_id, script_name):
 
 
 @app.delete("/<job_id>")
+@app.get("/<job_id>/stop")
 @lock
 def terminate_job(job_id):
     global jobs
@@ -183,14 +184,28 @@ def output(job_id):
         yield line
 
 
-@app.get("/<job_id>/file/<path:path>")
+@app.get("/<job_id>/files/<path:path>")
 def download_file(job_id, path):
     jobs_path = app.config.get('jobs.path')
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
-    return static_file(path, root=job_path)
+    if os.path.isdir(os.path.join(job_path, path)):
+        return {'files': list_dir(os.path.join(job_path, path))}
+    else:
+        return static_file(path, root=job_path)
 
 
-@app.delete("/<job_id>/file")
+@app.get("/<job_id>/files")
+@app.get("/<job_id>/files/")
+def list_files(job_id):
+    jobs_path = app.config.get('jobs.path')
+    job_path = os.path.abspath(os.path.join(jobs_path, job_id))
+    if not os.path.exists(job_path):
+        abort(404, 'Oh, no! The requested path does not exists!')
+    return {'files': list_dir(job_path)}
+
+
+@app.delete("/<job_id>/files")
+@app.get("/<job_id>/remove_files")
 @lock
 def delete_file(job_id):
     global jobs
@@ -231,3 +246,21 @@ def get_boolean(param):
 def write_json(filename, obj):
     with open(filename, 'w') as info_f:
         info_f.write(json.dumps(obj, sort_keys=True, indent=2))
+
+
+def list_dir(path):
+    if not os.path.exists(path) or not os.path.isdir(path):
+        return None
+
+    result = []
+    for f in os.listdir(path):
+        filename = os.path.join(path, f)
+        stat = os.stat(filename)
+        result.append({
+            'name': f,
+            'is_dir': os.path.isdir(filename),
+            'create_time': stat.st_ctime,
+            'modify_time': stat.st_mtime,
+            'size': stat.st_size
+        })
+    return result
