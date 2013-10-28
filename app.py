@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from gevent import monkey
-monkey.patch_all()
-
 from bottle import Bottle, run
 
 app = Bottle()
 
+
+@app.get("/api/ping")
+def ping():
+    return "pong"
 
 from jobs import app as job_app
 app.mount("/api/0/jobs", job_app)
@@ -20,7 +21,7 @@ app.mount("/api/0/security", security_app)
 
 
 def main():
-    run(app, server='gevent', host='', port='8081', reloader=True)
+    run(app, host='', port='8081', reloader=True)
 
 if __name__ == '__main__':
     main()

@@ -43,14 +43,17 @@ def lock(fn):
 @lock
 def all_jobs():
     global jobs
-    result = {'all': [], 'jobs': []}
     job_path = app.config.get('jobs.path')
     reverse = get_boolean(request.params.get('reverse', 'false'))
-    for dirname in os.listdir(job_path):
-        json_file = os.path.join(job_path, dirname, 'job.json')
-        if os.path.isfile(json_file):
-            with open(json_file) as f:
-                result['all'].append(json.load(f))
+    all = get_boolean(request.params.get('all', 'false'))
+    result = {}
+    if all:
+        result['all'] = []
+        for dirname in os.listdir(job_path):
+            json_file = os.path.join(job_path, dirname, 'job.json')
+            if os.path.isfile(json_file):
+                with open(json_file) as f:
+                    result['all'].append(json.load(f))
     result['jobs'] = [job['job_info'] for job in jobs]
 
     for key in result:  # sort
