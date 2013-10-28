@@ -36,27 +36,28 @@ class App():
         zk.start()
         zk.create(zk_path, json.dumps(server_info), ephemeral=True, makepath=True)
         while True:
+            web_keyname = 'api'
             try:
-                server_info['web'] = {'port': int(os.environ.get('MONITOR_PORT', 80))}
-                url = 'http://%s:%d' % (server_info['ip'], server_info['web']['port'])
+                server_info[web_keyname] = {'port': int(os.environ.get('MONITOR_PORT', 80)), 'path': '/api'}
+                url = 'http://%s:%d' % (server_info['ip'], server_info[web_keyname]['port'])
 
                 try:
                     if requests.get('%s/api/ping' % url).status_code == 200:
-                        server_info['web']['status'] = 'up'
+                        server_info[web_keyname]['status'] = 'up'
                 except:
-                    server_info['web']['status'] = 'down'
+                    server_info[web_keyname]['status'] = 'down'
                 else:
                     devices = requests.get('%s/api/0/devices' % url)
                     if devices.status_code == 200:
-                        server_info['web']['devices'] = devices.json()
+                        server_info[web_keyname]['devices'] = devices.json()
                     else:
-                        server_info['web']['devices'] = {}
+                        server_info[web_keyname]['devices'] = {}
 
                     jobs = requests.get('%s/api/0/jobs' % url, params={'all': False})
                     if jobs.status_code == 200:
-                        server_info['web']['jobs'] = jobs.json()['jobs']
+                        server_info[web_keyname]['jobs'] = jobs.json()['jobs']
                     else:
-                        server_info['web']['jobs'] = []
+                        server_info[web_keyname]['jobs'] = []
 
                 data, stat = zk.get(zk_path)
                 if data and json.loads(data) != server_info:
