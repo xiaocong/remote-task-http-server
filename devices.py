@@ -12,7 +12,7 @@ def devices():
     result = {'android': []}
     good_devices = adb.devices(status='good')
     for se, name in adb.devices(status=request.params.get("status", "all")).items():
-        device = {'adb.serial': se, 'adb.device': name}
+        device = {'adb': {'serial': se, 'device': name}}
         if se in good_devices:
             props = adb.getprop(se)
             device.update({
