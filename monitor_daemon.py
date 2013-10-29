@@ -33,11 +33,22 @@ class App():
 
         zk_path = '/pi/alive/mac/%s' % server_info['mac']
         zk = KazooClient(hosts=os.environ.get('ZOOKEEPER', 'zookeeper_server:2181'))
-        zk.start()
-        zk.create(zk_path, json.dumps(server_info), ephemeral=True, makepath=True)
+        while not zk.connected:
+            try:
+                zk.start()
+            except:
+                pass
+            time.sleep(3)
+        sleep_time = 5
         while True:
             web_keyname = 'api'
             try:
+                if not zk.connected:
+                    zk.restart()
+                    logger.info('Restart zk connection!')
+                if not zk.exists(zk_path):
+                    zk.create(zk_path, json.dumps(server_info), ephemeral=True, makepath=True)
+                    logger.info('Create ZK %s: %s' % (zk_path, value))
                 server_info[web_keyname] = {'port': int(os.environ.get('MONITOR_PORT', 80)), 'path': '/api'}
                 url = 'http://%s:%d' % (server_info['ip'], server_info[web_keyname]['port'])
 
@@ -64,9 +75,13 @@ class App():
                     value = json.dumps(server_info)
                     zk.set(zk_path, value)
                     logger.info('Update ZK %s: %s' % (zk_path, value))
-            except Exception as e:
-                logger.error(e.strerror)
-            time.sleep(3)
+            except:
+                if sleep_time == 5:
+                    logger.error("Connection error!")
+                    sleep_time = 1
+            else:
+                sleep_time = 5
+            time.sleep(sleep_time)
 
 app = App()
 logger = logging.getLogger("DaemonLog")
