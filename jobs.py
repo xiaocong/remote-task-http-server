@@ -117,6 +117,7 @@ def create_job():
     job = {'proc': proc, 'job_info': result}
     jobs.append(job)
 
+    callback = request.json.get('callback')
     def proc_clear():
         @lock
         def check():
@@ -127,6 +128,12 @@ def create_job():
                 jobs.remove(job)
                 result['exit_code'] = job['proc'].exit_code
                 write_json(job_info, result)
+                if callback:
+                    import requests
+                    try:
+                        requests.get(callback, params={'job_id': job_id})
+                    except:
+                        pass
                 return False
         while check():
             time.sleep(1)
