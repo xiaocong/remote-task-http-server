@@ -10,13 +10,14 @@ import re
 from daemon import runner
 from kazoo.client import KazooClient
 
+
 class App():
-    
+
     def __init__(self):
         self.stdin_path = '/dev/null'
         self.stdout_path = '/dev/tty'
         self.stderr_path = '/dev/tty'
-        self.pidfile_path =  '/var/log/monitor_daemon/monitor_daemon.pid'
+        self.pidfile_path = '/var/log/monitor_daemon/monitor_daemon.pid'
         self.pidfile_timeout = 5
 
     def mac_and_ip(self, eth):
@@ -31,15 +32,15 @@ class App():
     def run(self):
         server_info = self.mac_and_ip(os.environ.get('MONITOR_INTERFACE', 'eth0'))
 
-        zk_path = '/pi/alive/mac/%s' % server_info['mac']
+        zk_path = '/remote/alive/workstation/%s' % server_info['mac']
         zk = KazooClient(hosts=os.environ.get('ZOOKEEPER', 'zookeeper_server:2181'))
+        sleep_time = 5
         while not zk.connected:
             try:
                 zk.start()
             except:
                 pass
-            time.sleep(3)
-        sleep_time = 5
+            time.sleep(sleep_time)
         while True:
             web_keyname = 'api'
             try:
@@ -47,7 +48,8 @@ class App():
                     zk.restart()
                     logger.info('Restart zk connection!')
                 if not zk.exists(zk_path):
-                    zk.create(zk_path, json.dumps(server_info), ephemeral=True, makepath=True)
+                    value = json.dumps(server_info)
+                    zk.create(zk_path, value, ephemeral=True, makepath=True)
                     logger.info('Create ZK %s: %s' % (zk_path, value))
                 server_info[web_keyname] = {'port': int(os.environ.get('MONITOR_PORT', 80)), 'path': '/api'}
                 url = 'http://%s:%d' % (server_info['ip'], server_info[web_keyname]['port'])
@@ -92,6 +94,6 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 daemon_runner = runner.DaemonRunner(app)
-#This ensures that the logger file handle does not get closed during daemonization
-daemon_runner.daemon_context.files_preserve=[handler.stream]
+# This ensures that the logger file handle does not get closed during daemonization
+daemon_runner.daemon_context.files_preserve = [handler.stream]
 daemon_runner.do_action()
