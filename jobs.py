@@ -64,7 +64,17 @@ def all_jobs():
 
 @app.post("/")
 @lock
-def create_job():
+def create_job_without_id():
+    job_id = request.params.get("job_id") if "job_id" in request.params else next_job_id()
+    return create_job(job_id, "%s/%s" % (refine_url(request.url), job_id))
+
+
+@app.post("/<job_id>")
+def create_job_with_id(job_id):
+    return create_job(job_id, refine_url(request.url))
+
+
+def create_job(job_id, job_url):
     repo = request.json.get('repo')
     if repo is None:
         abort(400, 'The "repo" is mandatory for creating a new job!')
@@ -79,29 +89,31 @@ def create_job():
     if env['ANDROID_SERIAL'] not in adb.devices(status='ok') and env['ANDROID_SERIAL'] != 'no_device':
         abort(404, 'No specified device attached!')
 
-    jobs_path, job_id = app.config.get('jobs.path'), next_job_id()
-    job_path = os.path.abspath(os.path.join(jobs_path, job_id))
+    if any(job['job_info']['job_id'] == job_id for job in jobs):
+        abort(409, 'A job with the same job_id is running! If you want to re-run the job, please stop the running one firestly.')
+
+    job_path = os.path.abspath(os.path.join(app.config.get('jobs.path'), job_id))
+    shutil.rmtree(job_path, ignore_errors=True)
     workspace = os.path.join(job_path, 'workspace')
     os.makedirs(workspace)  # make the working directory for the job
     env.update({
         'WORKSPACE': workspace,
         'JOB_ID': job_id
     })
-    filenames = ['repo', 'output', 'run.sh', 'job.json']
-    local_repo, job_out, job_script, job_info = [os.path.join(job_path, f) for f in filenames]
+    filenames = ['repo', 'output', 'error', 'run.sh', 'job.json']
+    local_repo, job_out, job_err, job_script, job_info = [os.path.join(job_path, f) for f in filenames]
     with open(job_script, "w") as script_f:
         script_f.write(template(
             'run_script',
             repo=repo,
             local_repo=local_repo,
-            init_script='%s/%s/init_script/%s' % (
-                refine_url(request.url),
-                job_id,
+            init_script='%s/init_script/%s' % (
+                job_url,
                 repo.get('init_script', request.app.config.get('jobs.init_script'))
             ),
             env=env
         ))
-    proc = sh.bash(job_script, _out=job_out, _bg=True)
+    proc = sh.bash(job_script, _out=job_out, _err=job_err, _bg=True)
 
     timestamp = time.time()
     result = {
@@ -126,7 +138,10 @@ def create_job():
                 return True
             else:
                 jobs.remove(job)
-                result['exit_code'] = job['proc'].exit_code
+                try:
+                    result['exit_code'] = job['proc'].exit_code  # catch the exception while touching the exit_code first time.
+                except:
+                    result['exit_code'] = job['proc'].exit_code
                 write_json(job_info, result)
                 if callback:
                     import requests
