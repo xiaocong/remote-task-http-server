@@ -7,7 +7,7 @@ import re
 
 
 def devices(status='all'):
-    out = adb.devices().stdout.encode('utf-8')
+    out = adb.devices().stdout.decode('utf-8')
     match = "List of devices attached"
     index = out.find(match)
     error_statuses = ['offline', 'no permissions']
@@ -53,4 +53,4 @@ def getprop(serial, prop=None):
         return cmd(['-s', serial, 'shell', 'getprop', prop])['stdout'].strip()
     else:
         out = cmd(['-s', serial, 'shell', 'getprop'])['stdout']
-        return dict(re.findall(r"\[([^[\]]+)\]: +\[([^[\]]+)\]", out.encode('utf-8')))
+        return dict(re.findall(r"\[([^[\]]+)\]: +\[([^[\]]+)\]", out.decode('utf-8')))

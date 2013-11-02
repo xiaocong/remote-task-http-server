@@ -22,7 +22,7 @@ class App():
 
     def mac_and_ip(self, eth):
         import subprocess
-        out = subprocess.Popen(['/sbin/ifconfig', eth], stdout=subprocess.PIPE).communicate()[0].encode('utf-8')
+        out = subprocess.Popen(['/sbin/ifconfig', eth], stdout=subprocess.PIPE).communicate()[0].decode('utf-8')
         matches = {
             "ip": r"inet addr:(\d+\.\d+\.\d+\.\d+)",
             "mac": r"Ethernet  HWaddr (\w{2}:\w{2}:\w{2}:\w{2}:\w{2}:\w{2})"
