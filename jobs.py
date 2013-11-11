@@ -205,7 +205,8 @@ def output(job_id):
         raise StopIteration
     with open(job_info) as f:
         info = json.load(f)
-    for line in sh.tail('--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out, _iter=True):
+    args = ['--lines=%d' % lines, job_out] if "exit_code" in info else ['--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
+    for line in sh.tail(*args, _iter=True):
         yield line
 
 
