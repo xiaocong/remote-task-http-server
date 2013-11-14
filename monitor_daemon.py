@@ -34,15 +34,16 @@ class App():
 
         zk_path = '/remote/alive/workstation/%s' % server_info['mac']
         zk = KazooClient(hosts=os.environ.get('ZOOKEEPER', 'zookeeper_server:2181'))
-        sleep_time = 5
+        sleep_time = 1
         while not zk.connected:
             try:
                 zk.start()
             except:
                 pass
             time.sleep(sleep_time)
+        web_keyname, has_error, device_loop, loop = 'api', False, int(5/sleep_time), 0
+        server_info[web_keyname] = {}
         while True:
-            web_keyname = 'api'
             try:
                 if not zk.connected:
                     zk.restart()
@@ -51,7 +52,7 @@ class App():
                     value = json.dumps(server_info)
                     zk.create(zk_path, value, ephemeral=True, makepath=True)
                     logger.info('Create ZK %s: %s' % (zk_path, value))
-                server_info[web_keyname] = {'port': int(os.environ.get('MONITOR_PORT', 80)), 'path': '/api'}
+                server_info[web_keyname].update({'port': int(os.environ.get('MONITOR_PORT', 80)), 'path': '/api'})
                 url = 'http://%s:%d' % (server_info['ip'], server_info[web_keyname]['port'])
 
                 try:
@@ -59,12 +60,15 @@ class App():
                         server_info[web_keyname]['status'] = 'up'
                 except:
                     server_info[web_keyname]['status'] = 'down'
+                    server_info[web_keyname]['devices'] = {}
+                    server_info[web_keyname]['jobs'] = []
                 else:
-                    devices = requests.get('%s/api/0/devices' % url)
-                    if devices.status_code == 200:
-                        server_info[web_keyname]['devices'] = devices.json()
-                    else:
-                        server_info[web_keyname]['devices'] = {}
+                    if loop == 0:  # we want not to query devices so frequently, so...
+                        devices = requests.get('%s/api/0/devices' % url)
+                        if devices.status_code == 200:
+                            server_info[web_keyname]['devices'] = devices.json()
+                        else:
+                            server_info[web_keyname]['devices'] = {}
 
                     jobs = requests.get('%s/api/0/jobs' % url, params={'all': False})
                     if jobs.status_code == 200:
@@ -78,11 +82,13 @@ class App():
                     zk.set(zk_path, value)
                     logger.info('Update ZK %s: %s' % (zk_path, value))
             except:
-                if sleep_time == 5:
+                loop = 0
+                if not has_error:
                     logger.error("Connection error!")
-                    sleep_time = 1
+                    has_error = True
             else:
-                sleep_time = 5
+                has_error = False
+                loop = (loop + 1) % device_loop
             time.sleep(sleep_time)
 
 app = App()
