@@ -57,7 +57,7 @@ def all_jobs():
     result['jobs'] = [job['job_info'] for job in jobs]
 
     for key in result:  # sort
-        result[key] = sorted(result[key], key=lambda x: float(x['timestamp']), reverse=reverse)
+        result[key] = sorted(result[key], key=lambda x: float(x['started_at']), reverse=reverse)
 
     return result
 
@@ -123,8 +123,8 @@ def create_job(job_id, job_url):
         'job_path': job_path,
         'env': env,
         'exclusive': exclusive,
-        'timestamp': str(timestamp),
-        'datetime': str(datetime.fromtimestamp(timestamp))
+        'started_at': str(timestamp),
+        'started_datetime': str(datetime.fromtimestamp(timestamp))
     }
     job = {'proc': proc, 'job_info': result}
     jobs.append(job)
@@ -142,6 +142,10 @@ def create_job(job_id, job_url):
                     result['exit_code'] = job['proc'].exit_code  # catch the exception while touching the exit_code first time.
                 except:
                     result['exit_code'] = job['proc'].exit_code
+                finally:
+                    timestamp = time.time()
+                    result['finished_at'] = str(timestamp)
+                    result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
                 write_json(job_info, result)
                 if callback:
                     import requests
