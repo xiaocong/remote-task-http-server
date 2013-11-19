@@ -15,8 +15,8 @@ class App():
 
     def __init__(self):
         self.stdin_path = '/dev/null'
-        self.stdout_path = '/dev/tty'
-        self.stderr_path = '/dev/tty'
+        self.stdout_path = '/dev/null'
+        self.stderr_path = '/dev/null'
         self.pidfile_path = '/var/log/monitor_daemon/monitor_daemon.pid'
         self.pidfile_timeout = 5
 
@@ -34,14 +34,14 @@ class App():
 
         zk_path = '/remote/alive/workstation/%s' % server_info['mac']
         zk = KazooClient(hosts=os.environ.get('ZOOKEEPER', 'zookeeper_server:2181'))
-        sleep_time = 1
+        sleep_time = 10
         while not zk.connected:
             try:
                 zk.start()
             except:
                 pass
             time.sleep(sleep_time)
-        web_keyname, has_error, device_loop, loop = 'api', False, int(5/sleep_time), 0
+        web_keyname, has_error, device_loop, loop = 'api', False, int(10/sleep_time), 0
         server_info[web_keyname] = {}
         while True:
             try:
