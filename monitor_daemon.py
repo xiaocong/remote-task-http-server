@@ -10,6 +10,8 @@ import re
 from daemon import runner
 from kazoo.client import KazooClient
 
+dev = os.environ.get('DEVELOPMENT', 'false').lower() == 'true'
+
 
 class App():
 
@@ -17,7 +19,7 @@ class App():
         self.stdin_path = '/dev/null'
         self.stdout_path = '/dev/null'
         self.stderr_path = '/dev/null'
-        self.pidfile_path = '/var/run/monitor_daemon.pid'
+        self.pidfile_path = '%s/monitor_daemon.pid' % ('/tmp' if dev else '/var/run')
         self.pidfile_timeout = 5
 
     def mac_and_ip(self, eth):
@@ -101,7 +103,7 @@ app = App()
 logger = logging.getLogger("DaemonLog")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler = logging.FileHandler("/var/log/monitor_daemon/monitor_daemon.log")
+handler = logging.FileHandler("%s/monitor_daemon.log" %("/tmp" if dev else "/var/log/monitor_daemon"))
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
