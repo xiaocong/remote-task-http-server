@@ -43,29 +43,42 @@ def lock(fn):
 @lock
 def all_jobs():
     global jobs
-    result = {'all': [], 'jobs': []}
     job_path = app.config.get('jobs.path')
-    reverse = get_boolean(request.params.get('reverse', 'False'))
-    for dirname in os.listdir(job_path):
-        json_file = os.path.join(job_path, dirname, 'job.json')
-        if os.path.isfile(json_file):
-            with open(json_file) as f:
-                result['all'].append(json.load(f))
-    if jobs:
-        result['jobs'] = [job['job_info'] for job in jobs]
-    for key in result:  # sort 
-        result[key] = sorted(result[key], key=lambda x: float(x['timestamp']), reverse=reverse)
+    reverse = get_boolean(request.params.get('reverse', 'false'))
+    all = get_boolean(request.params.get('all', 'false'))
+    result = {}
+    if all:
+        result['all'] = []
+        for dirname in os.listdir(job_path):
+            json_file = os.path.join(job_path, dirname, 'job.json')
+            if os.path.isfile(json_file):
+                with open(json_file) as f:
+                    result['all'].append(json.load(f))
+    result['jobs'] = [job['job_info'] for job in jobs]
+
+    for key in result:  # sort
+        result[key] = sorted(result[key], key=lambda x: float(x['started_at']), reverse=reverse)
 
     return result
 
 
 @app.post("/")
 @lock
-def create_job():
+def create_job_without_id():
+    job_id = request.params.get("job_id") if "job_id" in request.params else next_job_id()
+    return create_job(job_id, "%s/%s" % (refine_url(request.url), job_id))
+
+
+@app.post("/<job_id>")
+def create_job_with_id(job_id):
+    return create_job(job_id, refine_url(request.url))
+
+
+def create_job(job_id, job_url):
     repo = request.json.get('repo')
     if repo is None:
         abort(400, 'The "repo" is mandatory for creating a new job!')
-    exclusive = get_boolean(request.json.get('exclusive', 'True'))
+    exclusive = get_boolean(request.json.get('exclusive', True))
     env = request.json.get('env', {})
     env.setdefault('ANDROID_SERIAL', 'no_device')
 
@@ -76,32 +89,31 @@ def create_job():
     if env['ANDROID_SERIAL'] not in adb.devices(status='ok') and env['ANDROID_SERIAL'] != 'no_device':
         abort(404, 'No specified device attached!')
 
-    jobs_path, job_id = app.config.get('jobs.path'), next_job_id()
-    job_path = os.path.abspath(os.path.join(jobs_path, job_id))
+    if any(job['job_info']['job_id'] == job_id for job in jobs):
+        abort(409, 'A job with the same job_id is running! If you want to re-run the job, please stop the running one firestly.')
+
+    job_path = os.path.abspath(os.path.join(app.config.get('jobs.path'), job_id))
+    shutil.rmtree(job_path, ignore_errors=True)
     workspace = os.path.join(job_path, 'workspace')
-    env['WORKSPACE'] = workspace
-    env['JOB_ID'] = job_id
-    try:
-        os.makedirs(workspace)
-    except:
-        pass
-    local_repo = os.path.join(job_path, 'repo')
-    job_out = os.path.join(job_path, 'output')
-    job_script = os.path.join(job_path, 'run.sh')
-    job_info = os.path.join(job_path, 'job.json')
+    os.makedirs(workspace)  # make the working directory for the job
+    env.update({
+        'WORKSPACE': workspace,
+        'JOB_ID': job_id
+    })
+    filenames = ['repo', 'output', 'error', 'run.sh', 'job.json']
+    local_repo, job_out, job_err, job_script, job_info = [os.path.join(job_path, f) for f in filenames]
     with open(job_script, "w") as script_f:
         script_f.write(template(
             'run_script',
             repo=repo,
             local_repo=local_repo,
-            init_script='%s/%s/init_script/%s' % (
-                refine_url(request.url),
-                job_id,
+            init_script='%s/init_script/%s' % (
+                job_url,
                 repo.get('init_script', request.app.config.get('jobs.init_script'))
             ),
             env=env
         ))
-    proc = sh.bash(job_script, _out=job_out, _bg=True)
+    proc = sh.bash(job_script, _out=job_out, _err=job_err, _bg=True)
 
     timestamp = time.time()
     result = {
@@ -111,12 +123,13 @@ def create_job():
         'job_path': job_path,
         'env': env,
         'exclusive': exclusive,
-        'timestamp': str(timestamp),
-        'datetime': str(datetime.fromtimestamp(timestamp))
+        'started_at': str(timestamp),
+        'started_datetime': str(datetime.fromtimestamp(timestamp))
     }
     job = {'proc': proc, 'job_info': result}
     jobs.append(job)
 
+    callback = request.json.get('callback')
     def proc_clear():
         @lock
         def check():
@@ -125,13 +138,26 @@ def create_job():
                 return True
             else:
                 jobs.remove(job)
+                try:
+                    result['exit_code'] = job['proc'].exit_code  # catch the exception while touching the exit_code first time.
+                except:
+                    result['exit_code'] = job['proc'].exit_code
+                finally:
+                    timestamp = time.time()
+                    result['finished_at'] = str(timestamp)
+                    result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
+                write_json(job_info, result)
+                if callback:
+                    import requests
+                    try:
+                        requests.get(callback, params={'job_id': job_id})
+                    except:
+                        pass
                 return False
         while check():
             time.sleep(1)
     threading.Thread(target=proc_clear).start()
-
-    with open(job_info, 'w') as info_f:
-        info_f.write(json.dumps(result, sort_keys=True, indent=2))
+    write_json(job_info, result)
     return result
 
 
@@ -153,6 +179,7 @@ def get_init_script(job_id, script_name):
 
 
 @app.delete("/<job_id>")
+@app.get("/<job_id>/stop")
 @lock
 def terminate_job(job_id):
     global jobs
@@ -173,7 +200,7 @@ def job_info(job_id):
 
 @app.get("/<job_id>/stream")
 def output(job_id):
-    last_lines = int(request.params.get('last_lines', 40))
+    lines = int(request.params.get('lines', 40))
     jobs_path = app.config.get('jobs.path')
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
     job_out = os.path.join(job_path, 'output')
@@ -182,18 +209,33 @@ def output(job_id):
         raise StopIteration
     with open(job_info) as f:
         info = json.load(f)
-    for line in sh.tail('--lines=%d' % last_lines, '--pid=%d' % info['job_pid'], '-f', job_out, _iter=True):
+    args = ['--lines=%d' % lines, job_out] if "exit_code" in info else ['--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
+    for line in sh.tail(*args, _iter=True):
         yield line
 
 
-@app.get("/<job_id>/file/<path:path>")
+@app.get("/<job_id>/files/<path:path>")
 def download_file(job_id, path):
     jobs_path = app.config.get('jobs.path')
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
-    return static_file(path, root=job_path)
+    if os.path.isdir(os.path.join(job_path, path)):
+        return {'files': list_dir(os.path.join(job_path, path))}
+    else:
+        return static_file(path, root=job_path)
 
 
-@app.delete("/<job_id>/file")
+@app.get("/<job_id>/files")
+@app.get("/<job_id>/files/")
+def list_files(job_id):
+    jobs_path = app.config.get('jobs.path')
+    job_path = os.path.abspath(os.path.join(jobs_path, job_id))
+    if not os.path.exists(job_path):
+        abort(404, 'Oh, no! The requested path does not exists!')
+    return {'files': list_dir(job_path)}
+
+
+@app.delete("/<job_id>/files")
+@app.get("/<job_id>/remove_files")
 @lock
 def delete_file(job_id):
     global jobs
@@ -201,6 +243,8 @@ def delete_file(job_id):
     job_path = os.path.abspath(os.path.join(jobs_path, job_id))
     if any(job_id == job['job_info']['job_id'] for job in jobs):
         abort(409, 'The specified job is running!')
+    elif not os.path.exists(job_path):
+        abort(400, 'No specified job!')
     shutil.rmtree(job_path, ignore_errors=True)
 
 
@@ -226,4 +270,27 @@ def next_job_id():
 
 
 def get_boolean(param):
-    return param.lower() != 'false' and param != '0'
+    return param if isinstance(param, bool) else param not in ['false', '0', 0, 'False']
+
+
+def write_json(filename, obj):
+    with open(filename, 'w') as info_f:
+        info_f.write(json.dumps(obj, sort_keys=True, indent=2))
+
+
+def list_dir(path):
+    if not os.path.exists(path) or not os.path.isdir(path):
+        return None
+
+    result = []
+    for f in os.listdir(path):
+        filename = os.path.join(path, f)
+        stat = os.stat(filename)
+        result.append({
+            'name': f,
+            'is_dir': os.path.isdir(filename),
+            'create_time': stat.st_ctime,
+            'modify_time': stat.st_mtime,
+            'size': stat.st_size
+        })
+    return result

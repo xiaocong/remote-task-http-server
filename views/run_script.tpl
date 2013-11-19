@@ -6,6 +6,12 @@ git clone -b {{repo['branch']}} {{repo['url']}} {{local_repo}}
 git clone {{repo['url']}} {{local_repo}}
 %end
 
+rc=$?
+if [[ $rc != 0 ]] ; then
+    echo "Error during download repo!"
+    exit $rc
+fi
+
 cd {{local_repo}}
 
 %for key in env:
@@ -15,9 +21,6 @@ export {{key}}={{env[key]}}
 curl {{init_script}} | bash
 
 rc=$?
-
-echo "---End of script---"
-
 if [[ $rc != 0 ]] ; then
     exit $rc
 fi
