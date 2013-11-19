@@ -17,7 +17,7 @@ class App():
         self.stdin_path = '/dev/null'
         self.stdout_path = '/dev/null'
         self.stderr_path = '/dev/null'
-        self.pidfile_path = '/var/log/monitor_daemon/monitor_daemon.pid'
+        self.pidfile_path = '/var/run/monitor_daemon.pid'
         self.pidfile_timeout = 5
 
     def mac_and_ip(self, eth):
@@ -41,7 +41,7 @@ class App():
             except:
                 pass
             time.sleep(sleep_time)
-        web_keyname, has_error, device_loop, loop = 'api', False, int(10/sleep_time), 0
+        web_keyname, has_error, device_loop, loop = 'api', False, int(10 / sleep_time), 0
         server_info[web_keyname] = {}
         while True:
             try:
@@ -60,7 +60,7 @@ class App():
                     if r.status_code == 200:
                         server_info[web_keyname]['status'] = 'up'
                     else:
-                        logger.error("%s --- %s" %(r.url, r.text))
+                        logger.error("%s --- %s" % (r.url, r.text))
                 except Error as e:
                     logger.error(e)
                     server_info[web_keyname]['status'] = 'down'
@@ -72,14 +72,14 @@ class App():
                         if devices.status_code == 200:
                             server_info[web_keyname]['devices'] = devices.json()
                         else:
-                            logger.error("%s --- %s" %(devices.url, devices.text))
+                            logger.error("%s --- %s" % (devices.url, devices.text))
                             server_info[web_keyname]['devices'] = {}
 
                     jobs = requests.get('%s/api/0/jobs' % url, params={'all': False})
                     if jobs.status_code == 200:
                         server_info[web_keyname]['jobs'] = jobs.json()['jobs']
                     else:
-                        logger.error("%s --- %s" %(jobs.url, jobs.text))
+                        logger.error("%s --- %s" % (jobs.url, jobs.text))
                         server_info[web_keyname]['jobs'] = []
 
                 data, stat = zk.get(zk_path)
