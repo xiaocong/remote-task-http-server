@@ -56,9 +56,13 @@ class App():
                 url = 'http://%s:%d' % (server_info['ip'], server_info[web_keyname]['port'])
 
                 try:
-                    if requests.get('%s/api/ping' % url).status_code == 200:
+                    r = requests.get('%s/api/ping' % url)
+                    if r.status_code == 200:
                         server_info[web_keyname]['status'] = 'up'
-                except:
+                    else:
+                        logger.error("%s --- %s" %(r.url, r.text))
+                except e:
+                    logger.error(e)
                     server_info[web_keyname]['status'] = 'down'
                     server_info[web_keyname]['devices'] = {}
                     server_info[web_keyname]['jobs'] = []
@@ -68,12 +72,14 @@ class App():
                         if devices.status_code == 200:
                             server_info[web_keyname]['devices'] = devices.json()
                         else:
+                            logger.error("%s --- %s" %(devices.url, devices.text))
                             server_info[web_keyname]['devices'] = {}
 
                     jobs = requests.get('%s/api/0/jobs' % url, params={'all': False})
                     if jobs.status_code == 200:
                         server_info[web_keyname]['jobs'] = jobs.json()['jobs']
                     else:
+                        logger.error("%s --- %s" %(jobs.url, jobs.text))
                         server_info[web_keyname]['jobs'] = []
 
                 data, stat = zk.get(zk_path)
