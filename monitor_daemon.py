@@ -61,7 +61,7 @@ class App():
                         server_info[web_keyname]['status'] = 'up'
                     else:
                         logger.error("%s --- %s" %(r.url, r.text))
-                except e:
+                except Error as e:
                     logger.error(e)
                     server_info[web_keyname]['status'] = 'down'
                     server_info[web_keyname]['devices'] = {}
