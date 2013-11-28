@@ -4,6 +4,10 @@
 from bottle import Bottle, request, static_file, abort
 import adb
 import re
+try:
+    import PIL.Image as Image
+except:
+    from PIL import Image
 
 app = Bottle()
 
@@ -80,7 +84,12 @@ def stat(serial):
 @app.get("/<serial>/screenshot")
 def screenshot(serial):
     adb.cmd(['-s', serial, 'shell', 'screencap', '/sdcard/screenshot.png'])
-    if adb.cmd(['-s', serial, 'pull', '/sdcard/screenshot.png', '/tmp/screenshot.png'])["returncode"] == 0:
-        return static_file('screenshot.png', root='/tmp')
+    filename, thumbnail = '%s.png' % serial, '%s.thumbnail.png' % serial
+    if adb.cmd(['-s', serial, 'pull', '/sdcard/screenshot.png', '/tmp/%s' % filename])["returncode"] == 0:
+        im = Image.open('/tmp/%s' % filename)
+        size = (int(request.params.get('width', im.size[0])), int(request.params.get('height', im.size[1])))
+        im.thumbnail(size)
+        im.save('/tmp/%s' % thumbnail)
+        return static_file(thumbnail, root='/tmp')
     else:
         abort(500)
