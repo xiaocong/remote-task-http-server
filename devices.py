@@ -2,15 +2,18 @@
 # -*- coding: utf-8 -*-
 
 from bottle import Bottle, request, static_file, abort
-import adb
 import re
 import time
 import os
-from jobs import lock
+import subprocess
+from io import BytesIO
 try:
     import PIL.Image as Image
 except:
     from PIL import Image
+
+from jobs import lock
+import adb
 
 app = Bottle()
 
@@ -88,14 +91,11 @@ def stat(serial):
 @lock
 def screenshot(serial):
     size = (int(request.params.get('width', 480)), int(request.params.get('height', 480)))
-    filename, thumbnail = '%s.png' % serial, '%s(%dx%d).thumbnail.png' % (serial, size[0], size[1])
-    if os.path.exists('/tmp/%s' % thumbnail) and time.time() - os.stat('/tmp/%s' % thumbnail).st_mtime < 5:
-        return static_file(thumbnail, root='/tmp') # return if the thumbnail exists and was modfied in 5 secs.
-    if not os.path.exists('/tmp/%s' % filename) or time.time() - os.stat('/tmp/%s' % filename).st_mtime > 5:
-        adb.cmd(['-s', serial, 'shell', 'screencap', '/sdcard/screenshot.png'])
-        if adb.cmd(['-s', serial, 'pull', '/sdcard/screenshot.png', '/tmp/%s' % filename])["returncode"] != 0:
-            abort(500)
-    im = Image.open('/tmp/%s' % filename)
-    im.thumbnail(size)
-    im.save('/tmp/%s' % thumbnail)
+    thumbnail = '%s(%dx%d).thumbnail.png' % (serial, size[0], size[1])
+    if not os.path.exists('/tmp/%s' % thumbnail) or time.time() - os.stat('/tmp/%s' % thumbnail).st_mtime > 5:
+        p1 = subprocess.Popen(["adb", "-s", serial, "shell", "screencap", "-p"], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(["sed", "s/\r$//"], stdout=subprocess.PIPE, stdin=p1.stdout)
+        im = Image.open(BytesIO(p2.communicate()[0]))
+        im.thumbnail(size, Image.ANTIALIAS)
+        im.save('/tmp/%s' % thumbnail)
     return static_file(thumbnail, root='/tmp')
