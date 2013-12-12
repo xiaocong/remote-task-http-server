@@ -63,7 +63,6 @@ def all_jobs():
 
 
 @app.post("/")
-@lock
 def create_job_without_id():
     job_id = request.params.get("job_id") if "job_id" in request.params else next_job_id()
     return create_job(job_id, "%s/%s" % (refine_url(request.url), job_id))
@@ -74,6 +73,7 @@ def create_job_with_id(job_id):
     return create_job(job_id, refine_url(request.url))
 
 
+@lock
 def create_job(job_id, job_url):
     repo = request.json.get('repo')
     if repo is None:

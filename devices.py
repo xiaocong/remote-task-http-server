@@ -1,7 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from bottle import Bottle, request
+from bottle import Bottle, request, static_file, abort
+import re
+import time
+import os
+import subprocess
+from io import BytesIO
+try:
+    import PIL.Image as Image
+except:
+    from PIL import Image
+
+from jobs import lock
 import adb
 
 app = Bottle()
@@ -48,3 +59,43 @@ def devices():
 @app.route("/<serial>/adb/<cmds:path>")
 def adb_cmd(serial, cmds):
     return adb.cmd(['-s', serial] + cmds.split("/"), timeout=request.params.get("timeout", 10))
+
+
+def meminfo(serial):
+    result = {}
+    for line in adb.cmd(['-s', serial, 'shell', 'cat', '/proc/meminfo'])['stdout'].splitlines():
+        item = [i.strip() for i in line.split(':')]
+        if len(item) == 2:
+            values = item[1].split()
+            result[item[0]] = int(values[0])*1024 if len(values) == 2 and values[1] == 'kB' else int(values[0])
+    return result
+
+
+def top(serial):
+    result = {"processes": []}
+    out = adb.cmd(['-s', serial, 'shell', 'top', '-n', '1'])['stdout']
+    m = re.search(r'User\s*(\d+)%,\s*System\s*(\d+)%,\s*IOW\s*(\d+)%,\s*IRQ\s*(\d+)%', out)
+    if m:
+        result["CPU"] = {"User": int(m.group(1))/100., "System": int(m.group(2))/100., "IOW": int(m.group(3))/100., "IRQ": int(m.group(4))/100.}
+    for item in re.findall(r'(\d+)\s+(\d+)\s+(\d+)%\s+(\w+)\s+(\d+)\s+(\d+)K\s+(\d+)K\s+(fg|bg)?\s+(\S+)\s+(\S+)', out):
+        pid, pr, cpu, s, thr, vss, rss, pcy, uid, name = item
+        result["processes"].append({"pid": int(pid), "pr": int(pr), "cpu": int(cpu)/100., "s": s, "thr": int(thr), "vss": int(vss)*1024, "rss": int(rss)*1024, "pcy": pcy, "uid": uid, "name": name})
+    return result
+
+
+@app.get("/<serial>/stat")
+def stat(serial):
+    return {"meminfo": meminfo(serial), "top": top(serial)}
+
+@app.get("/<serial>/screenshot")
+@lock
+def screenshot(serial):
+    size = (int(request.params.get('width', 480)), int(request.params.get('height', 480)))
+    thumbnail = '%s(%dx%d).thumbnail.png' % (serial, size[0], size[1])
+    if not os.path.exists('/tmp/%s' % thumbnail) or time.time() - os.stat('/tmp/%s' % thumbnail).st_mtime > 5:
+        p1 = subprocess.Popen(["adb", "-s", serial, "shell", "screencap", "-p"], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(["sed", "s/\r$//"], stdout=subprocess.PIPE, stdin=p1.stdout)
+        im = Image.open(BytesIO(p2.communicate()[0]))
+        im.thumbnail(size, Image.ANTIALIAS)
+        im.save('/tmp/%s' % thumbnail)
+    return static_file(thumbnail, root='/tmp')
