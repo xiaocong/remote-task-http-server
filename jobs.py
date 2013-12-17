@@ -100,8 +100,8 @@ def create_job(job_id, job_url):
         'WORKSPACE': workspace,
         'JOB_ID': job_id
     })
-    filenames = ['repo', 'output', 'error', 'run.sh', 'job.json']
-    local_repo, job_out, job_err, job_script, job_info = [os.path.join(job_path, f) for f in filenames]
+    filenames = ['repo', 'output', 'run.sh', 'job.json']
+    local_repo, job_out, job_script, job_info = [os.path.join(job_path, f) for f in filenames]
     with open(job_script, "w") as script_f:
         script_f.write(template(
             'run_script',
@@ -113,7 +113,20 @@ def create_job(job_id, job_url):
             ),
             env=env
         ))
-    proc = sh.bash(job_script, _out=job_out, _err=job_err, _bg=True)
+    out_buf = []
+    def proc_output(char, stdin, proc):
+        out_buf.append(char)
+        line = "".join(out_buf)
+        if line.endswith("Are you sure you want to continue connecting (yes/no)? "):
+            stdin.put("yes\n")
+        elif line.endswith("password: "):
+            stdin.put("%s\n" % repo.get("password", ""))
+        if char in ["\n", "\r"] or not proc.alive:
+            out_buf[:] = []
+            with open(job_out, "ab") as f:
+                f.write(line)
+
+    proc = sh.bash(job_script, _out=proc_output, _err_to_out=True, _bg=True, _out_bufsize=0, _tty_in=True)
 
     timestamp = time.time()
     result = {
