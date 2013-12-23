@@ -16,7 +16,7 @@ import shutil
 import adb
 
 app = Bottle()
-app.config.setdefault('jobs.path', '/home/pi/jobs')
+app.config.setdefault('jobs.path', os.path.join(os.environ['HOME'], 'jobs'))
 app.config.setdefault('jobs.init_script', '.init.yml')
 
 jobs = []  # we are using memory obj, so we MUST get ONE app instance running.
