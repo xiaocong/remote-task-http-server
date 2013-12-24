@@ -12,7 +12,7 @@ try:
 except:
     from PIL import Image
 
-from jobs import lock
+from jobs import Lock
 import adb
 
 app = Bottle()
@@ -76,10 +76,27 @@ def top(serial):
     out = adb.cmd(['-s', serial, 'shell', 'top', '-n', '1'])['stdout']
     m = re.search(r'User\s*(\d+)%,\s*System\s*(\d+)%,\s*IOW\s*(\d+)%,\s*IRQ\s*(\d+)%', out)
     if m:
-        result["CPU"] = {"User": int(m.group(1))/100., "System": int(m.group(2))/100., "IOW": int(m.group(3))/100., "IRQ": int(m.group(4))/100.}
+        result["CPU"] = {
+            "User": int(m.group(1)) / 100.,
+            "System": int(m.group(2)) / 100.,
+            "IOW": int(m.group(3)) / 100.,
+            "IRQ": int(m.group(4)) / 100.
+        }
+
     for item in re.findall(r'(\d+)\s+(\d+)\s+(\d+)%\s+(\w+)\s+(\d+)\s+(\d+)K\s+(\d+)K\s+(fg|bg)?\s+(\S+)\s+(\S+)', out):
         pid, pr, cpu, s, thr, vss, rss, pcy, uid, name = item
-        result["processes"].append({"pid": int(pid), "pr": int(pr), "cpu": int(cpu)/100., "s": s, "thr": int(thr), "vss": int(vss)*1024, "rss": int(rss)*1024, "pcy": pcy, "uid": uid, "name": name})
+        result["processes"].append({
+            "pid": int(pid),
+            "pr": int(pr),
+            "cpu": int(cpu) / 100.,
+            "s": s,
+            "thr": int(thr),
+            "vss": int(vss) * 1024,
+            "rss": int(rss) * 1024,
+            "pcy": pcy,
+            "uid": uid,
+            "name": name
+        })
     return result
 
 
@@ -87,8 +104,9 @@ def top(serial):
 def stat(serial):
     return {"meminfo": meminfo(serial), "top": top(serial)}
 
+
 @app.get("/<serial>/screenshot")
-@lock
+@Lock("screenshot")
 def screenshot(serial):
     size = (int(request.params.get('width', 480)), int(request.params.get('height', 480)))
     thumbnail = '%s(%dx%d).thumbnail.png' % (serial, size[0], size[1])

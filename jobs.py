@@ -21,26 +21,33 @@ app.config.setdefault('jobs.init_script', '.init.yml')
 
 jobs = []  # we are using memory obj, so we MUST get ONE app instance running.
 
-_lock = threading.Lock()
 
+class Lock(object):
+    locks = {}
 
-def lock(fn):
-    global _lock
+    def __init__(self, name):
+        self.name = name
 
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        _lock.acquire()
-        try:
-            return fn(*args, **kwargs)
-        except:
-            raise
-        finally:
-            _lock.release()
-    return wrapper
+    def __call__(self, fn):
+        if self.name not in Lock.locks:
+            Lock.locks[self.name] = threading.Lock()
+        lock = Lock.locks[self.name]
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            lock.acquire()
+            try:
+                return fn(*args, **kwargs)
+            except:
+                raise
+            finally:
+                lock.release()
+
+        return wrapper
 
 
 @app.get("/")
-@lock
+@Lock("job")
 def all_jobs():
     global jobs
     job_path = app.config.get('jobs.path')
@@ -73,7 +80,7 @@ def create_job_with_id(job_id):
     return create_job(job_id, refine_url(request.url))
 
 
-@lock
+@Lock("job")
 def create_job(job_id, job_url):
     repo = request.json.get('repo')
     if repo is None:
@@ -144,7 +151,7 @@ def create_job(job_id, job_url):
 
     callback = request.json.get('callback')
     def proc_clear():
-        @lock
+        @Lock("job")
         def check():
             global jobs
             if job and job['proc'].process.alive:
@@ -193,7 +200,7 @@ def get_init_script(job_id, script_name):
 
 @app.delete("/<job_id>")
 @app.get("/<job_id>/stop")
-@lock
+@Lock("job")
 def terminate_job(job_id):
     global jobs
     for job in jobs:
@@ -249,7 +256,7 @@ def list_files(job_id):
 
 @app.delete("/<job_id>/files")
 @app.get("/<job_id>/remove_files")
-@lock
+@Lock("job")
 def delete_file(job_id):
     global jobs
     jobs_path = app.config.get('jobs.path')
