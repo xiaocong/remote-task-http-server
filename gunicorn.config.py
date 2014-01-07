@@ -77,7 +77,7 @@ backlog = 32
 #
 
 workers = 1
-worker_class = 'egg:gunicorn#gevent'
+worker_class = 'geventwebsocket.gunicorn.workers.GeventWebSocketWorker'
 worker_connections = 32
 timeout = 60
 keepalive = 2

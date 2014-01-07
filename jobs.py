@@ -4,11 +4,11 @@
 from bottle import Bottle, request, template, abort, static_file
 import os
 import uuid
-import sh
 import json
 import yaml
 from datetime import datetime
 import time
+from gevent import subprocess, spawn, queue
 import threading
 import functools
 import psutil
@@ -120,20 +120,38 @@ def create_job(job_id, job_url):
             ),
             env=env
         ))
-    out_buf = []
-    def proc_output(char, stdin, proc):
-        out_buf.append(char)
-        line = "".join(out_buf)
-        if line.endswith("Are you sure you want to continue connecting (yes/no)? "):
-            stdin.put("yes\n")
-        elif line.endswith("password: "):
-            stdin.put("%s\n" % repo.get("password", ""))
-        if char in ["\n", "\r"] or not proc.alive:
-            out_buf[:] = []
-            with open(job_out, "ab") as f:
-                f.write(line)
+    # Start job process
+    proc = subprocess.Popen(["/bin/bash", job_script],
+                            stdout=subprocess.PIPE,
+                            stdin=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    q = queue.Queue() # queue to receive stdour and stderr
 
-    proc = sh.bash(job_script, _out=proc_output, _err_to_out=True, _bg=True, _out_bufsize=0, _tty_in=True)
+    def process_output(stdout, stdin): # process to perform interaction and put output to queue
+        out_buf = []
+        while True:
+            char = stdout.read(1)
+            out_buf.append(char)
+            line = "".join(out_buf)
+            if line.endswith("Are you sure you want to continue connecting (yes/no)? "):
+                stdin.write("yes\n")
+            elif line.endswith("password: "):
+                stdin.write("%s\n" % repo.get("password", ""))
+            if char in ["\n", ""]:
+                out_buf = []
+                q.put(line)
+            if char == "":
+                q.put(StopIteration)
+                break
+    def write_output(): # process to receive line from queue and write to file
+        with open(job_out, "ab") as f:
+            for line in q:
+                f.write(line)
+                f.flush()
+    # spawn processes to perform interaction and write to output file
+    spawn(process_output, proc.stdout, proc.stdin)
+    spawn(process_output, proc.stderr, proc.stdin)
+    spawn(write_output)
 
     timestamp = time.time()
     result = {
@@ -150,33 +168,34 @@ def create_job(job_id, job_url):
     jobs.append(job)
 
     callback = request.json.get('callback')
+
     def proc_clear():
         @Lock("job")
         def check():
             global jobs
-            if job and job['proc'].process.alive:
+            if job and job['proc'].poll() is None:
                 return True
             else:
                 jobs.remove(job)
-                try:
-                    result['exit_code'] = job['proc'].exit_code  # catch the exception while touching the exit_code first time.
-                except:
-                    result['exit_code'] = job['proc'].exit_code
-                finally:
-                    timestamp = time.time()
-                    result['finished_at'] = str(timestamp)
-                    result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
+                result['exit_code'] = job['proc'].returncode
+                timestamp = time.time()
+                result['finished_at'] = str(timestamp)
+                result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
                 write_json(job_info, result)
                 if callback:
                     import requests
                     try:
-                        requests.get(callback, params={'job_id': job_id})
+                        requests.get(callback,
+                                     params={
+                                         'job_id': job_id,
+                                         'exit_code': result['exit_code']
+                                     })
                     except:
                         pass
                 return False
         while check():
             time.sleep(1)
-    threading.Thread(target=proc_clear).start()
+    spawn(proc_clear)
     write_json(job_info, result)
     return result
 
@@ -229,8 +248,12 @@ def output(job_id):
         raise StopIteration
     with open(job_info) as f:
         info = json.load(f)
-    args = ['--lines=%d' % lines, job_out] if "exit_code" in info else ['--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
-    for line in sh.tail(*args, _iter=True):
+    if "exit_code" in info:
+        args = ['tail', '--lines=%d' % lines, job_out]
+    else:
+        args = ['tail', '--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
+    p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    for line in p.stdout:
         yield line
 
 
