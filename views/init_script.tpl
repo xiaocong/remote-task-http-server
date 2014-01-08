@@ -25,7 +25,7 @@ frc=0
 {{!script}}
 rc=$?
 if [[ $rc != 0 ]] ; then
-    $frc=$rc
+    frc=$rc
 fi
 %end
 

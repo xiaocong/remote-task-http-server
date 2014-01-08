@@ -4,11 +4,11 @@
 from bottle import Bottle, request, template, abort, static_file
 import os
 import uuid
-import sh
 import json
 import yaml
 from datetime import datetime
 import time
+from gevent import subprocess, spawn, queue
 import threading
 import functools
 import psutil
@@ -120,20 +120,11 @@ def create_job(job_id, job_url):
             ),
             env=env
         ))
-    out_buf = []
-    def proc_output(char, stdin, proc):
-        out_buf.append(char)
-        line = "".join(out_buf)
-        if line.endswith("Are you sure you want to continue connecting (yes/no)? "):
-            stdin.put("yes\n")
-        elif line.endswith("password: "):
-            stdin.put("%s\n" % repo.get("password", ""))
-        if char in ["\n", "\r"] or not proc.alive:
-            out_buf[:] = []
-            with open(job_out, "ab") as f:
-                f.write(line)
-
-    proc = sh.bash(job_script, _out=proc_output, _err_to_out=True, _bg=True, _out_bufsize=0, _tty_in=True)
+    # Start job process
+    job_out_file = open(job_out, "w")
+    proc = subprocess.Popen(["/bin/bash", job_script],
+                            stdout=job_out_file,
+                            stderr=job_out_file)
 
     timestamp = time.time()
     result = {
@@ -150,33 +141,34 @@ def create_job(job_id, job_url):
     jobs.append(job)
 
     callback = request.json.get('callback')
+
     def proc_clear():
         @Lock("job")
         def check():
-            global jobs
-            if job and job['proc'].process.alive:
+            if job and job['proc'].poll() is None:
                 return True
             else:
                 jobs.remove(job)
-                try:
-                    result['exit_code'] = job['proc'].exit_code  # catch the exception while touching the exit_code first time.
-                except:
-                    result['exit_code'] = job['proc'].exit_code
-                finally:
-                    timestamp = time.time()
-                    result['finished_at'] = str(timestamp)
-                    result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
+                result['exit_code'] = job['proc'].returncode
+                timestamp = time.time()
+                result['finished_at'] = str(timestamp)
+                result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
                 write_json(job_info, result)
                 if callback:
                     import requests
                     try:
-                        requests.get(callback, params={'job_id': job_id})
+                        requests.get(callback,
+                                     params={
+                                         'job_id': job_id,
+                                         'exit_code': result['exit_code']
+                                     })
                     except:
                         pass
                 return False
         while check():
             time.sleep(1)
-    threading.Thread(target=proc_clear).start()
+        job_out_file.close()
+    spawn(proc_clear)
     write_json(job_info, result)
     return result
 
@@ -229,9 +221,38 @@ def output(job_id):
         raise StopIteration
     with open(job_info) as f:
         info = json.load(f)
-    args = ['--lines=%d' % lines, job_out] if "exit_code" in info else ['--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
-    for line in sh.tail(*args, _iter=True):
-        yield line
+    if "exit_code" in info:
+        args = ['tail', '--lines=%d' % lines, job_out]
+    else:
+        args = ['tail', '--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    q = queue.Queue(1)
+    def put_heartbeat(proc, q):
+        while True:
+            time.sleep(5)
+            try:
+                q.put("", block=True, timeout=30)
+            except:
+                try:
+                    proc.kill()
+                except:
+                    pass
+                break
+    heartbeat_proc = spawn(put_heartbeat, proc, q)
+    def put_output(proc, heartbeat_proc, q):
+        for line in proc.stdout:
+            try:
+                q.put(line, block=True, timeout=30)
+            except:
+                try:
+                    proc.kill()
+                except:
+                    pass
+                break
+        heartbeat_proc.kill()
+        q.put(StopIteration)
+    output_proc = spawn(put_output, proc, heartbeat_proc, q)
+    return q
 
 
 @app.get("/<job_id>/files/<path:path>")

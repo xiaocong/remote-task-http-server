@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from sh import adb
 from time import sleep
 import re
+from gevent import subprocess
 
 
 def devices(status='all'):
-    out = adb.devices().stdout.decode('utf-8')
+    out = subprocess.Popen(
+        ["adb", "devices"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE).communicate()[0].decode('utf-8')
     match = "List of devices attached"
     index = out.find(match)
     error_statuses = ['offline', 'no permissions']
@@ -28,23 +31,20 @@ def devices(status='all'):
 
 
 def cmd(cmds, **kwargs):
-    proc = adb(*cmds, _bg=True)
+    proc = subprocess.Popen(["adb"] + cmds, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     start, interval, timeout = 0, 0.1, int(kwargs.get('timeout', 10))
     while start < timeout:
         sleep(interval)
         start += interval
-        if not proc.process.alive:
+        if proc.poll() is not None:
             break
     else:
         proc.kill()
-    try:
-        proc.wait()
-    except:
-        pass
+    out = proc.communicate()
     return {
-        'stdout': proc.stdout,
-        'stderr': proc.stderr,
-        'returncode': proc.exit_code
+        'stdout': out[0].decode("utf-8"),
+        'stderr': out[1].decode("utf-8"),
+        'returncode': proc.returncode
     }
 
 
