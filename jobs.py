@@ -228,29 +228,28 @@ def output(job_id):
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     q = queue.Queue(1)
     def put_heartbeat(proc, q):
-        while True:
-            time.sleep(5)
-            try:
+        try:
+            while proc.poll() is None:
                 q.put("", block=True, timeout=30)
+                time.sleep(5)
+        except:
+            try:
+                proc.kill()
             except:
-                try:
-                    proc.kill()
-                except:
-                    pass
-                break
+                pass
     heartbeat_proc = spawn(put_heartbeat, proc, q)
     def put_output(proc, heartbeat_proc, q):
-        for line in proc.stdout:
-            try:
+        try:
+            for line in proc.stdout:
                 q.put(line, block=True, timeout=30)
+            q.put(StopIteration)
+        except:
+            try:
+                proc.kill()
             except:
-                try:
-                    proc.kill()
-                except:
-                    pass
-                break
-        heartbeat_proc.kill()
-        q.put(StopIteration)
+                pass
+        finally:
+            heartbeat_proc.kill()
     output_proc = spawn(put_output, proc, heartbeat_proc, q)
     return q
 
