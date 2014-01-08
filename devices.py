@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from gevent import spawn
-from gevent import subprocess
 from bottle import Bottle, request, static_file, abort
 import re
 import time
 import os
+import subprocess
 from io import BytesIO
 try:
     import PIL.Image as Image
@@ -118,34 +117,3 @@ def screenshot(serial):
         im.thumbnail(size, Image.ANTIALIAS)
         im.save('/tmp/%s' % thumbnail)
     return static_file(thumbnail, root='/tmp')
-
-
-@app.route("/<serial>/getevent")
-def getevent(serial):
-    from geventwebsocket import WebSocketError
-    wsock = request.environ.get('wsgi.websocket')
-
-    if not wsock:
-        abort(400, 'Expected WebSocket request.')
-
-    working = True
-    def worker():
-        p = subprocess.Popen(["adb", "-s", serial, "shell", "getevent", "-l"], stdout=subprocess.PIPE)
-        while working and p.poll() is None:
-            line = p.stdout.readline()
-            m = re.match(r"/dev/input/event\d+:\s+(EV_KEY\s+KEY_\w+|EV_ABS\s+ABS_MT_TOUCH_MAJOR)\s+\w+", line)
-            if m:
-                try:
-                    wsock.send(m.group(0))
-                except WebSocketError:
-                    break
-        p.kill()
-
-    g = spawn(worker)
-    while True:
-        try:
-            if wsock.receive() is None:
-                break
-        except WebSocketError:
-            break
-    working = False
