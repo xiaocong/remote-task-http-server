@@ -1,10 +1,19 @@
 #!/bin/bash
 
 %if 'branch' in repo:
-git clone -b {{repo['branch']}} {{repo['url']}} {{local_repo}}
+CMD="git clone -b {{repo['branch']}} {{repo['url']}} {{local_repo}}"
 %else:
-git clone {{repo['url']}} {{local_repo}}
+CMD="git clone {{repo['url']}} {{local_repo}}"
 %end
+expect -c "
+  set timeout 30;
+  spawn $CMD
+  expect {
+    \"Are you sure you want to continue connecting (yes/no)?*\" {send \"yes\r\";}
+    \"password:\" {send \"{{repo.get('password', '')}}\r\";}
+  }
+  expect eof
+"
 
 rc=$?
 if [[ $rc != 0 ]] ; then

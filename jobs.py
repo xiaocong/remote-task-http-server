@@ -121,37 +121,10 @@ def create_job(job_id, job_url):
             env=env
         ))
     # Start job process
+    job_out_file = open(job_out, "w")
     proc = subprocess.Popen(["/bin/bash", job_script],
-                            stdout=subprocess.PIPE,
-                            stdin=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
-    q = queue.Queue() # queue to receive stdour and stderr
-
-    def process_output(stdout, stdin): # process to perform interaction and put output to queue
-        out_buf = []
-        while True:
-            char = stdout.read(1)
-            out_buf.append(char)
-            line = "".join(out_buf)
-            if line.endswith("Are you sure you want to continue connecting (yes/no)? "):
-                stdin.write("yes\n")
-            elif line.endswith("password: "):
-                stdin.write("%s\n" % repo.get("password", ""))
-            if char in ["\n", ""]:
-                out_buf = []
-                q.put(line)
-            if char == "":
-                q.put(StopIteration)
-                break
-    def write_output(): # process to receive line from queue and write to file
-        with open(job_out, "ab") as f:
-            for line in q:
-                f.write(line)
-                f.flush()
-    # spawn processes to perform interaction and write to output file
-    spawn(process_output, proc.stdout, proc.stdin)
-    spawn(process_output, proc.stderr, proc.stdin)
-    spawn(write_output)
+                            stdout=job_out_file,
+                            stderr=job_out_file)
 
     timestamp = time.time()
     result = {
@@ -172,7 +145,6 @@ def create_job(job_id, job_url):
     def proc_clear():
         @Lock("job")
         def check():
-            global jobs
             if job and job['proc'].poll() is None:
                 return True
             else:
@@ -195,6 +167,7 @@ def create_job(job_id, job_url):
                 return False
         while check():
             time.sleep(1)
+        job_out_file.close()
     spawn(proc_clear)
     write_json(job_info, result)
     return result
@@ -252,9 +225,34 @@ def output(job_id):
         args = ['tail', '--lines=%d' % lines, job_out]
     else:
         args = ['tail', '--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
-    p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    for line in p.stdout:
-        yield line
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    q = queue.Queue(1)
+    def put_heartbeat(proc, q):
+        while True:
+            time.sleep(5)
+            try:
+                q.put("", block=True, timeout=30)
+            except:
+                try:
+                    proc.kill()
+                except:
+                    pass
+                break
+    heartbeat_proc = spawn(put_heartbeat, proc, q)
+    def put_output(proc, heartbeat_proc, q):
+        for line in proc.stdout:
+            try:
+                q.put(line, block=True, timeout=30)
+            except:
+                try:
+                    proc.kill()
+                except:
+                    pass
+                break
+        heartbeat_proc.kill()
+        q.put(StopIteration)
+    output_proc = spawn(put_output, proc, heartbeat_proc, q)
+    return q
 
 
 @app.get("/<job_id>/files/<path:path>")

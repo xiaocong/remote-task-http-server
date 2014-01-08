@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from sh import adb
 from time import sleep
 import re
 from gevent import subprocess

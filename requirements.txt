@@ -10,6 +10,5 @@ lockfile==0.9.1
 psutil==1.1.2
 python-daemon==1.6
 requests==2.0.1
-sh==1.09
 wsgiref==0.1.2
 zope.interface==4.0.5
