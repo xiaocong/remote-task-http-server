@@ -125,7 +125,7 @@ def create_job(job_id, job_url):
     job_out_file = open(job_out, "w")
     proc = subprocess.Popen(["/bin/bash", job_script],
                             stdout=job_out_file,
-                            stderr=job_out_file)
+                            stderr=subprocess.STDOUT)
 
     timestamp = time.time()
     result = {
@@ -226,7 +226,7 @@ def output(job_id):
         args = ['tail', '--lines=%d' % lines, job_out]
     else:
         args = ['tail', '--lines=%d' % lines, '--pid=%d' % info['job_pid'], '-f', job_out]
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     q = queue.Queue(1)
     def put_heartbeat(proc, q):
         try:
