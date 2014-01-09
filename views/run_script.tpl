@@ -27,7 +27,7 @@ cd {{local_repo}}
 export {{key}}={{env[key]}}
 %end
 
-curl {{init_script}} | bash
+curl {{init_script}} | stdbuf -oL -eL bash
 
 rc=$?
 if [[ $rc != 0 ]] ; then
