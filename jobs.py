@@ -227,7 +227,7 @@ def output(job_id):
     def put_heartbeat(proc, q):
         try:
             while proc.poll() is None:
-                q.put("", block=True, timeout=30)
+                q.put("\0", block=True, timeout=30)
                 time.sleep(5)
         except:
             try:
