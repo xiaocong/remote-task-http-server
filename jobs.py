@@ -122,9 +122,8 @@ def create_job(job_id, job_url):
             env=env
         ))
     # Start job process
-    job_out_file = open(job_out, "w")
     proc = subprocess.Popen(["/bin/bash", job_script],
-                            stdout=job_out_file,
+                            stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT)
 
     timestamp = time.time()
@@ -141,36 +140,33 @@ def create_job(job_id, job_url):
     job = {'proc': proc, 'job_info': result}
     jobs.append(job)
 
-    callback = request.json.get('callback')
-
-    def proc_clear():
-        @Lock("job")
-        def check():
-            if job and job['proc'].poll() is None:
-                return True
-            else:
-                jobs.remove(job)
-                result['exit_code'] = job['proc'].returncode
-                timestamp = time.time()
-                result['finished_at'] = str(timestamp)
-                result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
-                write_json(job_info, result)
-                if callback:
-                    import requests
-                    try:
-                        requests.get(callback,
-                                     params={
-                                         'job_id': job_id,
-                                         'exit_code': result['exit_code']
-                                     })
-                    except:
-                        pass
-                return False
-        while check():
-            time.sleep(1)
-        job_out_file.close()
-    spawn(proc_clear)
     write_json(job_info, result)
+    callback = request.json.get('callback')
+    def proc_output():
+        with open(job_out, "wb") as f:
+            for line in proc.stdout:
+                f.write(line)
+                f.flush()
+        @Lock("job")
+        def finish_job():
+            jobs.remove(job)
+            result['exit_code'] = job['proc'].returncode
+            timestamp = time.time()
+            result['finished_at'] = str(timestamp)
+            result['finished_datetime'] = str(datetime.fromtimestamp(timestamp))
+            write_json(job_info, result)
+            if callback:
+                import requests
+                try:
+                    requests.get(callback,
+                                 params={
+                                     'job_id': job_id,
+                                     'exit_code': result['exit_code']
+                                 })
+                except:
+                    pass
+        finish_job()
+    spawn(proc_output)
     return result
 
 
