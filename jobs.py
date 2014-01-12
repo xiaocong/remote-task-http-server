@@ -246,7 +246,7 @@ def output(job_id):
             except:
                 pass
         finally:
-            heartbeat_proc.kill()
+            heartbeat_proc.join()
     output_proc = spawn(put_output, proc, heartbeat_proc, q)
     return q
 
