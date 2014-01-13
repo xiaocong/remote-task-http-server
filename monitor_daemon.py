@@ -29,7 +29,12 @@ class App():
             "ip": r"inet addr:(\d+\.\d+\.\d+\.\d+)",
             "mac": r"Ethernet  HWaddr (\w{2}:\w{2}:\w{2}:\w{2}:\w{2}:\w{2})"
         }
-        return dict((k, re.search(matches[k], out).group(1)) for k in matches)
+        info = dict((k, re.search(matches[k], out).group(1)) for k in matches)
+        info['uname'] = subprocess.Popen(
+            ['/bin/uname', '-n', '-m', '-o'],
+            stdout=subprocess.PIPE
+        ).communicate()[0].decode('utf-8').strip()
+        return info
 
     def run(self):
         server_info = self.mac_and_ip(os.environ.get('MONITOR_INTERFACE', 'eth0'))
