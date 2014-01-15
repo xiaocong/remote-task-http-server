@@ -143,10 +143,9 @@ def create_job(job_id, job_url):
     write_json(job_info, result)
     callback = request.json.get('callback')
     def proc_output():
-        with open(job_out, "wb") as f:
-            for line in proc.stdout:
+        for line in proc.stdout:
+            with open(job_out, "ab") as f:
                 f.write(line)
-                f.flush()
         @Lock("job")
         def finish_job():
             jobs.remove(job)
