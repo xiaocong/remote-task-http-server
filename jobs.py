@@ -16,7 +16,7 @@ import shutil
 import adb
 
 app = Bottle()
-app.config.setdefault('user.home', '/home/pi')
+app.config.setdefault('user.home', os.environ.get('WORKSTATION_PATH', '/home/pi'))
 app.config.setdefault('jobs.init_script', '.init.yml')
 app.config.update({'jobs.path': os.path.join(app.config.get('user.home'), 'jobs')})
 
